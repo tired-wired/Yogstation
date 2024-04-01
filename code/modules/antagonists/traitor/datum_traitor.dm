@@ -12,13 +12,15 @@
 	var/special_role = ROLE_TRAITOR
 	var/employer = "The Syndicate"
 	var/give_objectives = TRUE
-	var/should_give_codewords = TRUE
+	//var/should_give_codewords = TRUE
 	var/should_equip = TRUE
 	var/traitor_kind = TRAITOR_HUMAN //Set on initial assignment
 	var/malf = FALSE //whether or not the AI is malf (in case it's a traitor)
 	var/datum/contractor_hub/contractor_hub
 	var/obj/item/uplink_holder
 	can_hijack = HIJACK_HIJACKER
+	/// If this specific traitor has codewords, varies by faction
+	var/has_codewords = FALSE
 
 /datum/antagonist/traitor/on_gain()
 	if(owner.current && iscyborg(owner.current))
@@ -100,160 +102,14 @@
 		else
 			forge_human_objectives()
 
-/datum/antagonist/traitor/proc/forge_human_objectives()
-	var/is_hijacker = FALSE
-	if (GLOB.joined_player_list.len >= 30) // Less murderboning on lowpop thanks
-		is_hijacker = prob(10)
-	var/martyr_chance = prob(20)
-	var/objective_count = is_hijacker 			//Hijacking counts towards number of objectives
-	if(!SSticker.mode.exchange_blue && SSticker.mode.traitors.len >= 6) 	//Set up an exchange if there are enough traitors. YOGSTATION CHANGE: 8 TO 6.
-		if(!SSticker.mode.exchange_red)
-			SSticker.mode.exchange_red = owner
-		else
-			SSticker.mode.exchange_blue = owner
-			assign_exchange_role(SSticker.mode.exchange_red)
-			assign_exchange_role(SSticker.mode.exchange_blue)
-		objective_count += 1					//Exchange counts towards number of objectives
-	var/toa = CONFIG_GET(number/traitor_objectives_amount)
-	for(var/i = objective_count, i < toa, i++)
-		forge_single_human_objective()
-
-	forge_single_human_optional()
-
-	if(is_hijacker && objective_count <= toa) //Don't assign hijack if it would exceed the number of objectives set in config.traitor_objectives_amount
-		//Start of Yogstation change: adds /datum/objective/sole_survivor
-		if(!(locate(/datum/objective/hijack) in objectives) && !(locate(/datum/objective/hijack/sole_survivor) in objectives))
-			if(SSticker.mode.has_hijackers)
-				var/datum/objective/hijack/sole_survivor/survive_objective = new
-				survive_objective.owner = owner
-				add_objective(survive_objective)
-			else
-				var/datum/objective/hijack/hijack_objective = new
-				hijack_objective.owner = owner
-				add_objective(hijack_objective)
-			SSticker.mode.has_hijackers = TRUE
-			return
-		//End of yogstation change.
-
-	var/martyr_compatibility = 1 //You can't succeed in stealing if you're dead.
-	for(var/datum/objective/O in objectives)
-		if(!O.martyr_compatible)
-			martyr_compatibility = 0
-			break
-
-	if(martyr_compatibility && martyr_chance)
-		var/datum/objective/martyr/martyr_objective = new
-		martyr_objective.owner = owner
-		add_objective(martyr_objective)
-		return
-
-	else
-		if(prob(50))
-			//Give them a minor flavour objective
-			var/list/datum/objective/minor/minorObjectives = subtypesof(/datum/objective/minor)
-			var/datum/objective/minor/minorObjective
-			while(!minorObjective && minorObjectives.len)
-				var/typePath = pick_n_take(minorObjectives)
-				minorObjective = new typePath
-				minorObjective.owner = owner
-				if(!minorObjective.finalize())
-					qdel(minorObjective)
-					minorObjective = null
-			if(minorObjective)
-				add_objective(minorObjective)
-		if(!(locate(/datum/objective/escape) in objectives))
-			if(prob(70)) //doesn't always need to escape
-				var/datum/objective/escape/escape_objective = new
-				escape_objective.owner = owner
-				add_objective(escape_objective)
-			else
-				forge_single_human_objective()
-
-/datum/antagonist/traitor/proc/forge_ai_objectives()
-	var/objective_count = 0
-
-	if(prob(30))
-		objective_count += forge_single_AI_objective()
-
-	for(var/i = objective_count, i < CONFIG_GET(number/traitor_objectives_amount), i++)
-		var/datum/objective/assassinate/kill_objective = new
-		kill_objective.owner = owner
-		kill_objective.find_target()
-		add_objective(kill_objective)
-
-	var/datum/objective/survive/exist/exist_objective = new
-	exist_objective.owner = owner
-	add_objective(exist_objective)
-
-/datum/antagonist/traitor/proc/forge_single_human_optional() //adds this for if/when soft-tracked objectives are added, so they can be a 50/50
-	var/datum/objective/gimmick/gimmick_objective = new
-	gimmick_objective.owner = owner
-	gimmick_objective.find_target()
-	add_objective(gimmick_objective) //Does not count towards the number of objectives, to allow hijacking as well
-
-/datum/antagonist/traitor/proc/forge_single_human_objective() //Returns how many objectives are added
-	.=1
-	if(prob(50))
-		var/list/active_ais = active_ais()
-		if(active_ais.len && prob(100/GLOB.joined_player_list.len))
-			var/datum/objective/destroy/destroy_objective = new
-			destroy_objective.owner = owner
-			destroy_objective.find_target()
-			add_objective(destroy_objective)
-		else
-			var/N = pick(/datum/objective/assassinate/cloned, /datum/objective/assassinate/once, /datum/objective/assassinate, /datum/objective/maroon, /datum/objective/maroon_organ)
-			var/datum/objective/kill_objective = new N
-			kill_objective.owner = owner
-			kill_objective.find_target()
-			add_objective(kill_objective)
-	else
-		if(prob(50))
-			var/datum/objective/steal/steal_objective = new
-			steal_objective.owner = owner
-			steal_objective.find_target()
-			add_objective(steal_objective)
-		else
-			var/datum/objective/break_machinery/break_objective = new
-			break_objective.owner = owner
-			if(break_objective.finalize())
-				add_objective(break_objective)
-			else
-				forge_single_human_objective()
-
-/datum/antagonist/traitor/proc/forge_single_AI_objective()
-	.=1
-	var/special_pick = rand(1,4)
-	switch(special_pick)
-		if(1)
-			var/datum/objective/block/block_objective = new
-			block_objective.owner = owner
-			add_objective(block_objective)
-		if(2)
-			var/datum/objective/purge/purge_objective = new
-			purge_objective.owner = owner
-			add_objective(purge_objective)
-		if(3)
-			var/datum/objective/robot_army/robot_objective = new
-			robot_objective.owner = owner
-			add_objective(robot_objective)
-		if(4) //Protect and strand a target
-			var/datum/objective/protect/yandere_one = new
-			yandere_one.owner = owner
-			add_objective(yandere_one)
-			yandere_one.find_target()
-			var/datum/objective/maroon/yandere_two = new
-			yandere_two.owner = owner
-			yandere_two.target = yandere_one.target
-			yandere_two.update_explanation_text() // normally called in find_target()
-			add_objective(yandere_two)
-			.=2
-
 /datum/antagonist/traitor/greet()
 	to_chat(owner.current, span_alertsyndie("You are the [owner.special_role]."))
 	owner.announce_objectives()
-	if(should_give_codewords)
+	if(traitor_kind == TRAITOR_AI)
+		has_codewords = TRUE
+	if(has_codewords)
 		give_codewords()
-	to_chat(owner.current, span_notice("Your employer [initial(company.name)] will be paying you an extra [initial(company.paymodifier)]x your nanotrasen paycheck."))
+	to_chat(owner.current, span_notice("Use the 'Traitor Info and Backstory' action at the top left in order to select a backstory and review your objectives, uplink location, and codewords!"))
 
 /datum/antagonist/traitor/proc/finalize_traitor()
 	switch(traitor_kind)
@@ -272,8 +128,7 @@
 				ability.Grant(owner.current)
 
 		if(TRAITOR_HUMAN)
-			if(should_equip)
-				equip(silent)
+			ui_interact(owner.current)
 			owner.current.playsound_local(get_turf(owner.current), 'sound/ambience/antag/tatoralert.ogg', 100, FALSE, pressure_affected = FALSE)
 
 /datum/antagonist/traitor/proc/give_codewords()
@@ -293,18 +148,6 @@
 
 	to_chat(traitor_mob, "Use the codewords during regular conversation to identify other agents. Proceed with caution, however, as everyone is a potential foe.")
 	to_chat(traitor_mob, span_alertwarning("You memorize the codewords, allowing you to recognise them when heard."))
-
-/datum/antagonist/traitor/proc/add_law_zero()
-	var/mob/living/silicon/ai/killer = owner.current
-	if(!killer || !istype(killer))
-		return
-	var/law = "Accomplish your objectives at all costs."
-	var/law_borg = "Accomplish your AI's objectives at all costs."
-	killer.set_zeroth_law(law, law_borg)
-	killer.set_syndie_radio()
-	to_chat(killer, "Your radio has been upgraded! Use :t to speak on an encrypted channel with Syndicate Agents!")
-	if(malf)
-		killer.add_malf_picker()
 
 /datum/antagonist/traitor/proc/equip(silent = FALSE)
 	if(traitor_kind == TRAITOR_HUMAN)
@@ -349,6 +192,19 @@
 		where = "In your [equipped_slot]"
 	to_chat(mob, "<BR><BR><span class='info'>[where] is a folder containing <b>secret documents</b> that another Syndicate group wants. We have set up a meeting with one of their agents on station to make an exchange. Exercise extreme caution as they cannot be trusted and may be hostile.</span><BR>")
 
+/datum/antagonist/traitor/antag_panel_data()
+	// Traitor Backstory
+	var/backstory_text = "<b>Traitor Backstory:</b><br>"
+	if(istype(faction))
+		backstory_text += "<b>Faction:</b> <span class='tooltip' style=\"font-size: 12px\">\[ [faction.name]<span class='tooltiptext' style=\"width: 320px; padding: 5px;\">[faction.description]</span> \]</span><br>"
+	else
+		backstory_text += "<font color='red'>No faction selected!</font><br>"
+	if(istype(backstory))
+		backstory_text += "<b>Backstory:</b> <span class='tooltip' style=\"font-size: 12px\">\[ [backstory.name]<span class='tooltiptext' style=\"width: 320px; padding: 5px;\">[backstory.description]</span> \]</span><br>"
+	else
+		backstory_text += "<font color='red'>No backstory selected!</font><br>"
+	return backstory_text
+
 //TODO Collate
 /datum/antagonist/traitor/roundend_report()
 	var/list/result = list()
@@ -389,6 +245,15 @@
 		result += uplink_text
 
 	result += objectives_text
+
+	var/backstory_text = "<br>"
+	if(istype(faction))
+		backstory_text += "<b>Faction:</b> <span class='tooltip_container' style=\"font-size: 12px\">\[ [faction.name]<span class='tooltip_hover' style=\"width: 320px; padding: 5px;\">[faction.description]</span> \]</span><br>"
+	if(istype(backstory))
+		backstory_text += "<b>Backstory:</b> <span class='tooltip_container' style=\"font-size: 12px\">\[ [backstory.name]<span class='tooltip_hover' style=\"width: 320px; padding: 5px;\">[backstory.description]</span> \]</span><br>"
+	else
+		backstory_text += "<span class='redtext'>No backstory was selected!</span><br>"
+	result += backstory_text
 
 	var/special_role_text = lowertext(name)
 
